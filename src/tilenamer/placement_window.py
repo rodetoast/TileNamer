@@ -24,6 +24,7 @@ from .placement import (
     available_families, available_patterns, build_placement_result,
 )
 from .preferences import Preferences
+from .theme import colors_for
 
 
 @dataclass(frozen=True)
@@ -111,12 +112,20 @@ class PlacementCanvas(QWidget):
         self.guide_pixmaps: dict[GuideAsset, QPixmap] = {}
         self.guides_enabled = True
         self.guide_opacity = 25
+        self.diagnostics_enabled = True
+        self.diagnostic_opacity = 100
         self.show_grid = True
         self.alpha_colors = (QColor(138, 143, 150), QColor(107, 112, 119))
         self.workspace_color = QColor("#24272b")
         self.field_color = QColor("#30353a")
         self.allowed_fallback_color = QColor("#f2b66d")
         self.warning_fallback_color = QColor("#f09a9a")
+        self.missing_fill_color = QColor(176, 64, 64, 48)
+        self.missing_border_color = QColor(218, 88, 78, 175)
+        self.nofit_fill_color = QColor(176, 112, 32, 48)
+        self.nofit_border_color = QColor(184, 112, 28, 190)
+        self.warning_fill_color = QColor(210, 65, 65, 88)
+        self.grid_color = QColor(235, 239, 242, 105)
         self.zoom = 1.0
         self.pan_offset = QPointF()
         self.fit_mode = True
@@ -175,15 +184,36 @@ class PlacementCanvas(QWidget):
         self.guide_opacity = max(5, min(80, int(opacity)))
         self.update()
 
+    def set_diagnostics_enabled(self, enabled: bool) -> None:
+        self.diagnostics_enabled = bool(enabled)
+        self.update()
+
+    def set_diagnostic_opacity(self, opacity: int) -> None:
+        self.diagnostic_opacity = max(10, min(100, int(opacity)))
+        self.update()
+
     def set_grid_visible(self, visible: bool) -> None:
         self.show_grid = visible
         self.update()
 
     def set_theme(self, dark: bool) -> None:
-        self.workspace_color = QColor("#24272b" if dark else "#d9dee3")
-        self.field_color = QColor("#343a40" if dark else "#f4f6f8")
-        self.allowed_fallback_color = QColor("#f2b66d" if dark else "#9b5b12")
-        self.warning_fallback_color = QColor("#f09a9a" if dark else "#a22d2d")
+        colors = colors_for("dark" if dark else "light")
+        self.workspace_color = QColor(colors.window)
+        self.field_color = QColor(colors.field if not dark else colors.button)
+        self.allowed_fallback_color = QColor(colors.fallback)
+        self.warning_fallback_color = QColor(colors.diagnostic_warning)
+        self.missing_fill_color = QColor(colors.diagnostic_missing)
+        self.missing_fill_color.setAlpha(48)
+        self.missing_border_color = QColor(colors.diagnostic_missing)
+        self.missing_border_color.setAlpha(190)
+        self.nofit_fill_color = QColor(colors.diagnostic_nofit)
+        self.nofit_fill_color.setAlpha(48)
+        self.nofit_border_color = QColor(colors.diagnostic_nofit)
+        self.nofit_border_color.setAlpha(200)
+        self.warning_fill_color = QColor(colors.diagnostic_warning)
+        self.warning_fill_color.setAlpha(88)
+        self.grid_color = QColor(colors.primary_text)
+        self.grid_color.setAlpha(105 if dark else 72)
         self.update()
 
     def fit_view(self) -> None:
@@ -461,23 +491,27 @@ class PlacementCanvas(QWidget):
         painter.restore()
 
     def _paint_diagnostics(self, painter: QPainter, scale: float, origin: QPointF) -> None:
-        if self.result is None:
+        if self.result is None or not self.diagnostics_enabled:
             return
+        painter.save()
+        painter.setOpacity(self.diagnostic_opacity / 100.0)
         for cell in self.result.cells:
             if cell.is_missing or cell.is_no_fit:
+                fill = self.nofit_fill_color if cell.is_no_fit else self.missing_fill_color
+                border = self.nofit_border_color if cell.is_no_fit else self.missing_border_color
                 for x, y in cell.occupied_cells:
                     rect = QRectF(
                         origin.x() + x * scale, origin.y() + y * scale, scale, scale,
                     )
-                    painter.fillRect(rect.adjusted(2, 2, -2, -2), QColor(176, 64, 64, 48))
-                    painter.setPen(QPen(QColor(218, 88, 78, 175), 1.5))
+                    painter.fillRect(rect.adjusted(2, 2, -2, -2), fill)
+                    painter.setPen(QPen(border, 1.5))
                     painter.drawRect(rect.adjusted(2, 2, -2, -2))
             if cell.fallback_severity == WARNING_FALLBACK:
                 for x, y in cell.occupied_cells:
                     rect = QRectF(
                         origin.x() + x * scale, origin.y() + y * scale, scale, scale,
                     )
-                    painter.fillRect(rect.adjusted(2, 2, -2, -2), QColor(210, 65, 65, 88))
+                    painter.fillRect(rect.adjusted(2, 2, -2, -2), self.warning_fill_color)
                     painter.setPen(QPen(self.warning_fallback_color, 2.0))
                     painter.drawRect(rect.adjusted(2, 2, -2, -2))
             elif cell.fallback_severity == ALLOWED_FALLBACK:
@@ -487,6 +521,7 @@ class PlacementCanvas(QWidget):
                         origin.x() + x * scale, origin.y() + y * scale, scale, scale,
                     )
                     painter.drawRect(rect.adjusted(2, 2, -2, -2))
+        painter.restore()
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
@@ -503,7 +538,7 @@ class PlacementCanvas(QWidget):
         self._paint_actual(painter, scale, origin)
         self._paint_diagnostics(painter, scale, origin)
         if self.show_grid:
-            painter.setPen(QPen(QColor(235, 239, 242, 105), 1))
+            painter.setPen(QPen(self.grid_color, 1))
             for y in range(self.result.height):
                 for x in range(self.result.width):
                     painter.drawRect(QRectF(origin.x() + x * scale,
@@ -549,8 +584,12 @@ class PlacementPreviewWindow(QWidget):
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(8)
         controls = QFrame(objectName="placementControls")
-        row = QHBoxLayout(controls)
-        row.setContentsMargins(8, 6, 8, 6)
+        control_rows = QVBoxLayout(controls)
+        control_rows.setContentsMargins(8, 6, 8, 6)
+        control_rows.setSpacing(5)
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        control_rows.addLayout(row)
         row.addWidget(QLabel("세트"))
         self.family_combo = ContentAwareComboBox(objectName="placementFamily")
         for family in available_families():
@@ -560,25 +599,6 @@ class PlacementPreviewWindow(QWidget):
         row.addWidget(QLabel("패턴"))
         self.pattern_combo = ContentAwareComboBox(objectName="placementPattern")
         row.addWidget(self.pattern_combo)
-        row.addSpacing(12)
-        self.guide_toggle = QPushButton(objectName="placementGuideToggle")
-        self.guide_toggle.setCheckable(True)
-        self.guide_toggle.setChecked(self.preferences.placement_guide_enabled)
-        row.addWidget(self.guide_toggle)
-        self.guide_opacity_label = QLabel(
-            "투명도", objectName="placementGuideOpacityLabel",
-        )
-        row.addWidget(self.guide_opacity_label)
-        self.guide_opacity_slider = QSlider(
-            Qt.Orientation.Horizontal, objectName="placementGuideOpacity",
-        )
-        self.guide_opacity_slider.setRange(5, 80)
-        self.guide_opacity_slider.setValue(self.preferences.placement_guide_opacity)
-        self.guide_opacity_slider.setFixedWidth(88)
-        row.addWidget(self.guide_opacity_slider)
-        self.guide_opacity_value = QLabel(objectName="placementGuideOpacityValue")
-        self.guide_opacity_value.setMinimumWidth(34)
-        row.addWidget(self.guide_opacity_value)
         row.addStretch(1)
         self.fit_button = QPushButton("맞춤", objectName="placementFit")
         self.zoom_out_button = QPushButton("−", objectName="placementZoomOut")
@@ -592,6 +612,57 @@ class PlacementPreviewWindow(QWidget):
         self.grid_toggle = QCheckBox("격자")
         self.grid_toggle.setChecked(True)
         row.addWidget(self.grid_toggle)
+
+        overlay_row = QHBoxLayout()
+        overlay_row.setSpacing(6)
+        control_rows.addLayout(overlay_row)
+        self.guide_toggle = QPushButton(objectName="placementGuideToggle")
+        self.guide_toggle.setCheckable(True)
+        self.guide_toggle.setChecked(self.preferences.placement_guide_enabled)
+        overlay_row.addWidget(self.guide_toggle)
+        self.guide_opacity_label = QLabel(
+            "투명도", objectName="placementGuideOpacityLabel",
+        )
+        overlay_row.addWidget(self.guide_opacity_label)
+        self.guide_opacity_slider = QSlider(
+            Qt.Orientation.Horizontal, objectName="placementGuideOpacity",
+        )
+        self.guide_opacity_slider.setRange(5, 80)
+        self.guide_opacity_slider.setValue(self.preferences.placement_guide_opacity)
+        self.guide_opacity_slider.setFixedWidth(88)
+        overlay_row.addWidget(self.guide_opacity_slider)
+        self.guide_opacity_value = QLabel(objectName="placementGuideOpacityValue")
+        self.guide_opacity_value.setMinimumWidth(34)
+        overlay_row.addWidget(self.guide_opacity_value)
+        overlay_row.addSpacing(14)
+        self.diagnostic_toggle = QPushButton(objectName="placementDiagnosticToggle")
+        self.diagnostic_toggle.setCheckable(True)
+        self.diagnostic_toggle.setChecked(
+            self.preferences.placement_diagnostic_enabled,
+        )
+        self.diagnostic_toggle.setToolTip(
+            "필요한 타일 없음, 크기 불일치, 대체 표시 상태를 표시합니다",
+        )
+        overlay_row.addWidget(self.diagnostic_toggle)
+        self.diagnostic_opacity_label = QLabel(
+            "투명도", objectName="placementDiagnosticOpacityLabel",
+        )
+        overlay_row.addWidget(self.diagnostic_opacity_label)
+        self.diagnostic_opacity_slider = QSlider(
+            Qt.Orientation.Horizontal, objectName="placementDiagnosticOpacity",
+        )
+        self.diagnostic_opacity_slider.setRange(10, 100)
+        self.diagnostic_opacity_slider.setValue(
+            self.preferences.placement_diagnostic_opacity,
+        )
+        self.diagnostic_opacity_slider.setFixedWidth(88)
+        overlay_row.addWidget(self.diagnostic_opacity_slider)
+        self.diagnostic_opacity_value = QLabel(
+            objectName="placementDiagnosticOpacityValue",
+        )
+        self.diagnostic_opacity_value.setMinimumWidth(38)
+        overlay_row.addWidget(self.diagnostic_opacity_value)
+        overlay_row.addStretch(1)
         outer.addWidget(controls)
         self.canvas = PlacementCanvas()
         outer.addWidget(self.canvas, 1)
@@ -612,6 +683,10 @@ class PlacementPreviewWindow(QWidget):
         self.pattern_combo.currentIndexChanged.connect(self._pattern_changed)
         self.guide_toggle.toggled.connect(self._guide_toggled)
         self.guide_opacity_slider.valueChanged.connect(self._guide_opacity_changed)
+        self.diagnostic_toggle.toggled.connect(self._diagnostic_toggled)
+        self.diagnostic_opacity_slider.valueChanged.connect(
+            self._diagnostic_opacity_changed,
+        )
         self.grid_toggle.toggled.connect(self.canvas.set_grid_visible)
         self.canvas.tile_clicked.connect(self._canvas_tile_clicked)
         self.canvas.zoom_changed.connect(
@@ -621,6 +696,8 @@ class PlacementPreviewWindow(QWidget):
         self.fit_button.clicked.connect(self.canvas.fit_view)
         self._guide_toggled(self.guide_toggle.isChecked())
         self._guide_opacity_changed(self.guide_opacity_slider.value())
+        self._diagnostic_toggled(self.diagnostic_toggle.isChecked())
+        self._diagnostic_opacity_changed(self.diagnostic_opacity_slider.value())
         self._family_changed()
 
     def _guide_toggled(self, enabled: bool) -> None:
@@ -635,6 +712,19 @@ class PlacementPreviewWindow(QWidget):
         self.guide_opacity_value.setText(f"{value}%")
         self.preferences.placement_guide_opacity = value
         self.canvas.set_guide_opacity(value)
+
+    def _diagnostic_toggled(self, enabled: bool) -> None:
+        self.diagnostic_toggle.setText("진단 ON" if enabled else "진단 OFF")
+        self.diagnostic_opacity_label.setEnabled(enabled)
+        self.diagnostic_opacity_slider.setEnabled(enabled)
+        self.diagnostic_opacity_value.setEnabled(enabled)
+        self.preferences.placement_diagnostic_enabled = enabled
+        self.canvas.set_diagnostics_enabled(enabled)
+
+    def _diagnostic_opacity_changed(self, value: int) -> None:
+        self.diagnostic_opacity_value.setText(f"{value}%")
+        self.preferences.placement_diagnostic_opacity = value
+        self.canvas.set_diagnostic_opacity(value)
 
     def _family_changed(self, *_args) -> None:
         family = str(self.family_combo.currentData() or "Solid")
@@ -776,39 +866,54 @@ class PlacementPreviewWindow(QWidget):
 
     def apply_theme(self, theme: str) -> None:
         dark = theme == "dark"
-        self.setStyleSheet("""
-            QWidget#placementPreviewWindow { background: %s; color: %s; }
-            #placementControls { background: %s; border: 1px solid %s; }
-            QComboBox, QPushButton { min-height: 30px; background: %s; color: %s; border: 1px solid %s; }
-            #placementControls QLabel, #placementControls QCheckBox { color: %s; background: transparent; }
-            #placementGuideToggle:checked { border: 1px solid #328b9d; }
-            QSlider::groove:horizontal { height: 4px; background: #70777e; }
-            QSlider::handle:horizontal { width: 12px; margin: -5px 0; background: #48aabc; border-radius: 6px; }
-            QSlider::groove:horizontal:disabled { background: #8a9096; }
-            QSlider::handle:horizontal:disabled { background: #a3a8ad; }
-            #placementZoomLabel { color: %s; font-weight: 600; }
-            #placementCanvas { background: #24272b; border: 1px solid %s; }
-            #placementEmpty { color: #aeb4bb; background: transparent; }
-            #placementSummary { color: %s; font-weight: 600; }
-            #placementMissing { color: %s; }
-        """ % (("#25282c", "#e2e5e8", "#2c3035", "#4b5158", "#343940",
-                  "#e4e7ea", "#555c64", "#e2e5e8", "#eef1f3", "#555c64",
-                  "#b9c0c7", "#e59a9a") if dark else
-                 ("#eef0f2", "#30363c", "#f1f3f5", "#a5adb5", "white",
-                  "#30363c", "#929ba4", "#30363c", "#30363c", "#737b84",
-                  "#5f6871", "#9c3939")))
+        colors = colors_for(theme)
+        window_background = colors.window if dark else colors.panel
+        self.setStyleSheet(f"""
+            QWidget#placementPreviewWindow {{
+                background: {window_background}; color: {colors.primary_text};
+            }}
+            #placementControls {{
+                background: {colors.window}; border: 1px solid {colors.border};
+            }}
+            QComboBox, QPushButton {{
+                min-height: 30px; background: {colors.button};
+                color: {colors.primary_text}; border: 1px solid {colors.border};
+            }}
+            QPushButton:disabled {{ color: {colors.disabled_text}; }}
+            #placementControls QLabel, #placementControls QCheckBox {{
+                color: {colors.primary_text}; background: transparent;
+            }}
+            #placementControls QLabel:disabled {{ color: {colors.disabled_text}; }}
+            #placementGuideToggle:checked,
+            #placementDiagnosticToggle:checked {{ border: 2px solid {colors.accent}; }}
+            QSlider::groove:horizontal {{
+                height: 4px; background: {colors.border};
+            }}
+            QSlider::handle:horizontal {{
+                width: 12px; margin: -5px 0; background: {colors.accent};
+                border-radius: 6px;
+            }}
+            QSlider::groove:horizontal:disabled {{ background: {colors.border}; }}
+            QSlider::handle:horizontal:disabled {{ background: {colors.disabled_text}; }}
+            #placementZoomLabel {{ color: {colors.primary_text}; font-weight: 600; }}
+            #placementCanvas {{ border: 1px solid {colors.border}; }}
+            #placementEmpty {{ color: {colors.secondary_text}; background: transparent; }}
+            #placementSummary {{ color: {colors.primary_text}; font-weight: 600; }}
+            #placementMissing {{ color: {colors.error}; }}
+        """)
         self._apply_combo_popup_theme(dark)
         self.canvas.set_theme(dark)
 
     def _apply_combo_popup_theme(self, dark: bool) -> None:
-        if dark:
-            foreground, background = QColor("#e4e7ea"), QColor("#2f343a")
-            selected_foreground, selected_background = QColor("#ffffff"), QColor("#256f82")
-            hover_background, disabled = QColor("#414850"), QColor("#8b9299")
-        else:
-            foreground, background = QColor("#30363c"), QColor("#ffffff")
-            selected_foreground, selected_background = QColor("#ffffff"), QColor("#327f91")
-            hover_background, disabled = QColor("#dce7ea"), QColor("#8a9299")
+        colors = colors_for("dark" if dark else "light")
+        foreground, background = QColor(colors.primary_text), QColor(colors.field)
+        selected_foreground = QColor(colors.selection_text)
+        selected_background = QColor(colors.accent)
+        hover_background = (
+            QColor(colors.button).lighter(125)
+            if dark else QColor(colors.accent).lighter(185)
+        )
+        disabled = QColor(colors.disabled_text)
         for combo in (self.family_combo, self.pattern_combo):
             view = combo.view()
             palette = view.palette()
@@ -831,7 +936,7 @@ class PlacementPreviewWindow(QWidget):
                 QAbstractItemView::item:disabled { color: %s; }
             """ % (
                 foreground.name(), background.name(),
-                QColor("#555c64" if dark else "#929ba4").name(),
+                QColor(colors.border).name(),
                 selected_foreground.name(), selected_background.name(),
                 foreground.name(), hover_background.name(),
                 selected_foreground.name(), selected_background.name(), disabled.name(),

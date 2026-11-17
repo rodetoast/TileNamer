@@ -142,14 +142,20 @@ def test_guide_resolution_does_not_change_actual_placement_result() -> None:
 def test_preferences_default_clamp_and_restore(tmp_path: Path) -> None:
     path = tmp_path / "prefs.ini"
     first = preferences(path)
-    assert first.placement_guide_enabled is True
+    assert first.placement_guide_enabled is False
     assert first.placement_guide_opacity == 25
+    assert first.placement_diagnostic_enabled is True
+    assert first.placement_diagnostic_opacity == 100
     first.placement_guide_enabled = False
     first.placement_guide_opacity = 37
+    first.placement_diagnostic_enabled = False
+    first.placement_diagnostic_opacity = 61
     first.settings.sync()
     restored = preferences(path)
     assert restored.placement_guide_enabled is False
     assert restored.placement_guide_opacity == 37
+    assert restored.placement_diagnostic_enabled is False
+    assert restored.placement_diagnostic_opacity == 61
     restored.placement_guide_opacity = 999
     assert restored.placement_guide_opacity == 80
 
@@ -157,6 +163,7 @@ def test_preferences_default_clamp_and_restore(tmp_path: Path) -> None:
 def test_toggle_slider_render_state_and_view_state_are_independent(tmp_path: Path) -> None:
     qt = app()
     prefs = preferences(tmp_path / "prefs.ini")
+    prefs.placement_guide_enabled = True
     source = PlacementPreviewSource(
         AssignmentModel(), Image.new("RGBA", (32, 32)), GridReference(),
         prefs.alpha_colors(),
@@ -193,6 +200,7 @@ def test_toggle_slider_render_state_and_view_state_are_independent(tmp_path: Pat
 def test_offscreen_guide_is_visible_below_warning_and_off_skips_it(tmp_path: Path) -> None:
     qt = app()
     prefs = preferences(tmp_path / "prefs.ini")
+    prefs.placement_guide_enabled = True
     source = PlacementPreviewSource(
         AssignmentModel(), Image.new("RGBA", (32, 32)), GridReference(),
         prefs.alpha_colors(),
@@ -215,6 +223,7 @@ def test_offscreen_guide_is_visible_below_warning_and_off_skips_it(tmp_path: Pat
 def test_controls_remain_readable_and_disabled_in_both_themes(tmp_path: Path) -> None:
     qt = app()
     prefs = preferences(tmp_path / "prefs.ini")
+    prefs.placement_guide_enabled = True
     source = PlacementPreviewSource(AssignmentModel(), None, GridReference(), prefs.alpha_colors())
     host = QWidget()
     window = PlacementPreviewWindow(host, lambda: source, QIcon(), "light", prefs)
@@ -243,6 +252,8 @@ def test_guide_preference_does_not_dirty_project_or_add_undo(tmp_path: Path) -> 
     undo_count = window.undo_stack.count()
     preview.guide_opacity_slider.setValue(64)
     preview.guide_toggle.setChecked(False)
+    preview.diagnostic_opacity_slider.setValue(64)
+    preview.diagnostic_toggle.setChecked(False)
     assert not window.project_dirty
     assert window.undo_stack.count() == undo_count
     window.close()
@@ -251,6 +262,7 @@ def test_guide_preference_does_not_dirty_project_or_add_undo(tmp_path: Path) -> 
 def test_actual_tile_is_rendered_above_persistent_guide(tmp_path: Path) -> None:
     qt = app()
     prefs = preferences(tmp_path / "prefs.ini")
+    prefs.placement_guide_enabled = True
     source = PlacementPreviewSource(
         AssignmentModel({"Platform_Center": [AssetAssignment("Platform_Center", 0, 0)]}),
         Image.new("RGBA", (32, 32), (250, 20, 20, 255)), GridReference(),

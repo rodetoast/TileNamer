@@ -58,7 +58,7 @@ class Preferences:
 
     @property
     def placement_guide_enabled(self) -> bool:
-        return self.settings.value("placement_preview/guide_enabled", True, type=bool)
+        return self.settings.value("placement_preview/guide_enabled", False, type=bool)
 
     @placement_guide_enabled.setter
     def placement_guide_enabled(self, value: bool) -> None:
@@ -76,6 +76,35 @@ class Preferences:
     def placement_guide_opacity(self, value: int) -> None:
         self.settings.setValue(
             "placement_preview/guide_opacity", max(5, min(80, int(value))),
+        )
+
+    @property
+    def placement_diagnostic_enabled(self) -> bool:
+        return self.settings.value(
+            "placement_preview/diagnostic_enabled", True, type=bool,
+        )
+
+    @placement_diagnostic_enabled.setter
+    def placement_diagnostic_enabled(self, value: bool) -> None:
+        self.settings.setValue(
+            "placement_preview/diagnostic_enabled", bool(value),
+        )
+
+    @property
+    def placement_diagnostic_opacity(self) -> int:
+        try:
+            value = int(self.settings.value(
+                "placement_preview/diagnostic_opacity", 100,
+            ))
+        except (TypeError, ValueError):
+            value = 100
+        return max(10, min(100, value))
+
+    @placement_diagnostic_opacity.setter
+    def placement_diagnostic_opacity(self, value: int) -> None:
+        self.settings.setValue(
+            "placement_preview/diagnostic_opacity",
+            max(10, min(100, int(value))),
         )
 
     def alpha_colors(self) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int]]:

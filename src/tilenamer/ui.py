@@ -46,7 +46,7 @@ from .placement_window import PlacementPreviewSource, PlacementPreviewWindow
 from .project import TileProject
 from .preferences import Preferences
 from .resources import application_icon
-from .theme import apply_application_theme
+from .theme import apply_application_theme, colors_for
 from .thumbnail import build_assignment_thumbnail, decorate_thumbnail_selection
 
 ROLE_CATEGORY = int(Qt.ItemDataRole.UserRole)
@@ -753,8 +753,6 @@ class MainWindow(QMainWindow):
         view_menu.addSeparator()
         view_menu.addAction(self.auto_reload_action)
         view_menu.addSeparator()
-        view_menu.addAction(self.placement_preview_action)
-        view_menu.addSeparator()
         view_menu.addAction(self.reset_zoom_action)
 
         help_menu = self.menuBar().addMenu("도움말")
@@ -808,6 +806,13 @@ class MainWindow(QMainWindow):
         self.export_current_button = add_button("현재 타일", self.export_current_action)
         self.export_current_button.setToolTip("현재 선택한 타일 종류만 내보내기")
         add_separator()
+        self.placement_preview_button = add_button(
+            "배치 미리보기", self.placement_preview_action,
+        )
+        self.placement_preview_button.setToolTip(
+            "현재 Assignment의 Auto Tile 배치 결과 열기",
+        )
+        add_separator()
         self.undo_button = add_button("↶", self.undo_action, "historyButton")
         self.undo_button.setToolTip("실행 취소 (Ctrl+Z)")
         self.undo_button.setAccessibleName("실행 취소")
@@ -840,7 +845,8 @@ class MainWindow(QMainWindow):
         self.zoom_in_button.setFixedWidth(34)
         self.toolbar_primary_buttons = (
             self.open_button, self.replace_button, self.save_project_button,
-            self.export_all_button, self.export_current_button, self.undo_button, self.redo_button,
+            self.export_all_button, self.export_current_button,
+            self.placement_preview_button, self.undo_button, self.redo_button,
         )
         outer.addWidget(self.toolbar_widget)
 
@@ -1262,60 +1268,104 @@ class MainWindow(QMainWindow):
     def _apply_theme(self) -> None:
         dark = self.preferences.theme == "dark"
         apply_application_theme(QApplication.instance(), self.preferences.theme)
-        dark_stylesheet = """
-            #appRoot, #sidePanel { background: #25282c; color: #e2e5e8; }
-            #topToolbar { background: #2c3035; border-bottom-color: #454b52; }
-            #centerToolRow { background: #292e33; border-bottom-color: #4d555d; }
-            QPushButton, QComboBox, QSpinBox, QLineEdit {
-                background: #343940; color: #e4e7ea; border: 1px solid #555c64;
-            }
-            QPushButton:hover { background: #414951; border-color: #687582; }
-            QPushButton:pressed { background: #293038; }
-            QPushButton:disabled, QSpinBox:disabled { color: #777e86; background: #2a2e33; border-color: #3e444a; }
-            #topToolbar QPushButton#historyButton {
-                color: #f0f3f5; background: #343a40; border-color: #59626b;
-            }
-            #topToolbar QPushButton#historyButton:disabled {
-                color: #9ca4ac; background: #2f3439; border-color: #4e565e;
-            }
-            #topToolbar QPushButton#zoomControlButton, #topToolbar QPushButton#zoomLabel {
-                color: #f2f4f6; background: #343a40; border-color: #5c6570;
-            }
-            #topToolbar QPushButton#zoomControlButton:hover, #topToolbar QPushButton#zoomLabel:hover {
-                color: #ffffff; background: #414951; border-color: #74808b;
-            }
-            #panelTitle, #panelSectionTitle, #assignmentCategory, #outputPath { color: #eef1f3; }
-            #headerCount { color: #aab0b7; }
-            #assignmentCount { color: #aab0b7; }
-            #selectedLayerName { color: #70cfee; }
-            QTreeWidget, QListWidget { background: #2b2f34; color: #dfe3e7; border-color: #4b5158; }
-            QHeaderView::section { background: #343940; color: #d8dce0; border-color: #4c5259; }
-            QTabWidget::pane { border-color: #4a5057; }
-            QTabBar::tab { background: #30343a; color: #bec4ca; padding: 6px 8px; }
-            QTabBar::tab:selected { background: #3a4047; color: white; }
-            #assignmentEmpty { color: #aeb4bb; border-color: #4b5158; background: #2b2f34; }
-            #selectionControl { background: #30363b; border-color: #555d65; }
-            #selectionModeSegment { border-color: #59616a; }
-            #selectionModeSegment QPushButton { color: #d9dde1; background: #343a40; }
-            #selectionModeSegment QPushButton:checked { background: #2786ad; color: white; }
-            #selectionModeSegment QPushButton:hover:!checked { background: #3a424a; }
-            #selectionModeSegment QPushButton:disabled { background: #292e33; color: #6f767d; }
-            #outputSection { background: transparent; }
-            #outputSummary { color: #aab0b7; }
-            #sectionSeparator { color: #474d54; }
-            QStatusBar { background: #2d3136; border-top-color: #484e55; }
-            QStatusBar QLabel { color: #d2d6da; }
-            QMenuBar { background: #2c3035; color: #e2e5e8; }
-            QMenuBar::item:selected { background: #41474e; }
-            QMenu { background: #30343a; color: #e2e5e8; border: 1px solid #50565d; }
-            QMenu::item:selected { background: #3979b9; color: white; }
-            QDialog, QTextBrowser { background: #25282c; color: #e2e5e8; }
-            QStatusBar QLabel[statusTone="warning"] { color: #f2b66d; font-weight: 600; }
-        """ if dark else ""
-        light_semantic_stylesheet = """
-            QStatusBar QLabel[statusTone="warning"] { color: #8a4b08; font-weight: 600; }
-        """ if not dark else ""
-        self.setStyleSheet(self._base_stylesheet + dark_stylesheet + light_semantic_stylesheet)
+        colors = colors_for(self.preferences.theme)
+        hover = (
+            QColor(colors.button).lighter(122)
+            if dark else QColor(colors.accent).lighter(190)
+        ).name()
+        pressed = QColor(colors.button).darker(112).name()
+        semantic_stylesheet = f"""
+            #appRoot, #sidePanel {{
+                background: {colors.panel}; color: {colors.primary_text};
+            }}
+            #topToolbar {{
+                background: {colors.window}; border-bottom-color: {colors.border};
+            }}
+            #centerToolRow {{
+                background: {colors.panel}; border-bottom-color: {colors.border};
+            }}
+            QPushButton, QComboBox, QSpinBox, QLineEdit {{
+                background: {colors.button}; color: {colors.primary_text};
+                border: 1px solid {colors.border};
+            }}
+            QPushButton:hover {{ background: {hover}; border-color: {colors.accent}; }}
+            QPushButton:pressed {{ background: {pressed}; }}
+            QPushButton:disabled, QComboBox:disabled, QSpinBox:disabled,
+            QLineEdit:disabled {{
+                color: {colors.disabled_text}; background: {colors.panel};
+                border-color: {colors.border};
+            }}
+            #topToolbar QPushButton#historyButton,
+            #topToolbar QPushButton#zoomControlButton,
+            #topToolbar QPushButton#zoomLabel {{
+                color: {colors.primary_text}; background: {colors.button};
+                border-color: {colors.border};
+            }}
+            #topToolbar QPushButton#historyButton:disabled {{
+                color: {colors.disabled_text}; background: {colors.panel};
+            }}
+            #panelTitle, #panelSectionTitle, #assignmentCategory, #outputPath {{
+                color: {colors.primary_text};
+            }}
+            #headerCount, #assignmentCount, #outputSummary {{
+                color: {colors.secondary_text};
+            }}
+            #selectedLayerName {{ color: {colors.accent}; }}
+            QTreeWidget, QListWidget {{
+                background: {colors.field}; color: {colors.primary_text};
+                border-color: {colors.border};
+            }}
+            QHeaderView::section {{
+                background: {colors.button}; color: {colors.primary_text};
+                border-color: {colors.border};
+            }}
+            QTabWidget::pane {{ border-color: {colors.border}; }}
+            QTabBar::tab {{
+                background: {colors.panel}; color: {colors.secondary_text};
+                padding: 6px 8px;
+            }}
+            QTabBar::tab:selected {{
+                background: {colors.button}; color: {colors.primary_text};
+            }}
+            QTreeWidget::item:selected, QListWidget::item:selected {{
+                background: {colors.accent}; color: {colors.selection_text};
+            }}
+            #assignmentEmpty {{
+                color: {colors.secondary_text}; border-color: {colors.border};
+                background: {colors.panel};
+            }}
+            #selectionControl {{ background: {colors.panel}; border-color: {colors.border}; }}
+            #selectionModeSegment {{ border-color: {colors.border}; }}
+            #selectionModeSegment QPushButton {{
+                color: {colors.primary_text}; background: {colors.button};
+            }}
+            #selectionModeSegment QPushButton:checked {{
+                background: {colors.accent}; color: {colors.selection_text};
+            }}
+            #selectionModeSegment QPushButton:disabled {{
+                background: {colors.panel}; color: {colors.disabled_text};
+            }}
+            #outputSection {{ background: transparent; }}
+            #sectionSeparator {{ color: {colors.border}; }}
+            QStatusBar {{ background: {colors.panel}; border-top-color: {colors.border}; }}
+            QStatusBar QLabel {{ color: {colors.primary_text}; }}
+            QStatusBar QLabel[statusTone="warning"] {{
+                color: {colors.warning}; font-weight: 600;
+            }}
+            QMenuBar {{ background: {colors.window}; color: {colors.primary_text}; }}
+            QMenuBar::item:selected {{ background: {hover}; }}
+            QMenu {{
+                background: {colors.panel}; color: {colors.primary_text};
+                border: 1px solid {colors.border};
+            }}
+            QMenu::item:selected {{
+                background: {colors.accent}; color: {colors.selection_text};
+            }}
+            QDialog, QTextBrowser {{
+                background: {colors.window}; color: {colors.primary_text};
+            }}
+        """
+        self.setStyleSheet(self._base_stylesheet + semantic_stylesheet)
         with QSignalBlocker(self.light_theme_action), QSignalBlocker(self.dark_theme_action):
             self.light_theme_action.setChecked(not dark)
             self.dark_theme_action.setChecked(dark)

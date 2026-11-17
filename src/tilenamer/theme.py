@@ -20,20 +20,28 @@ class ThemeColors:
     selection_text: str
     warning: str
     error: str
+    fallback: str
+    diagnostic_missing: str
+    diagnostic_nofit: str
+    diagnostic_warning: str
 
 
 THEME_COLORS = {
     "light": ThemeColors(
         window="#f1f3f5", panel="#eef0f2", field="#ffffff",
-        primary_text="#2f353b", secondary_text="#697079", disabled_text="#7d858d",
+        primary_text="#2f353b", secondary_text="#626a72", disabled_text="#7d858d",
         border="#929ba4", button="#f3f5f6", accent="#3979b9",
         selection_text="#ffffff", warning="#8a4b08", error="#a22d2d",
+        fallback="#8a4b08", diagnostic_missing="#a22d2d",
+        diagnostic_nofit="#8a4b08", diagnostic_warning="#a22d2d",
     ),
     "dark": ThemeColors(
         window="#25282c", panel="#2b2f34", field="#30343a",
         primary_text="#e2e5e8", secondary_text="#b0b7be", disabled_text="#929aa2",
         border="#555c64", button="#343940", accent="#3979b9",
         selection_text="#ffffff", warning="#f2b66d", error="#f09a9a",
+        fallback="#f2b66d", diagnostic_missing="#f09a9a",
+        diagnostic_nofit="#f2b66d", diagnostic_warning="#f09a9a",
     ),
 }
 
